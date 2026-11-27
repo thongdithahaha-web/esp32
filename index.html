@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 Web Flasher</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --success: #22c55e;
+    }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body {
+      margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+      display: flex; justify-content: center; min-height: 100vh;
+    }
+    .container {
+      width: 100%; max-width: 680px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 14px; padding: 24px;
+      height: fit-content; box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    h1 { margin: 0 0 6px; font-size: 1.5rem; }
+    .subtitle { margin: 0 0 20px; color: var(--muted); font-size: 0.9rem; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .field { flex: 1; min-width: 180px; }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+    input[type="text"], input[type="file"], select {
+      width: 100%; padding: 10px 12px; border-radius: 8px;
+      border: 1px solid var(--border); background: #0f172a; color: var(--text);
+      font-size: 0.95rem;
+    }
+    .presets { display: flex; gap: 6px; margin-top: 6px; }
+    .preset-btn {
+      padding: 4px 8px; font-size: 0.78rem; border-radius: 6px;
+      border: 1px solid var(--border); background: #0f172a; color: var(--muted);
+      cursor: pointer;
+    }
+    .preset-btn:hover { color: var(--text); border-color: var(--primary); }
+    .checkbox-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 18px;
+      font-size: 0.9rem; color: var(--text); cursor: pointer;
+    }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+    button.btn {
+      padding: 11px 18px; border-radius: 8px; border: none; font-weight: 600;
+      font-size: 0.95rem; cursor: pointer; transition: 0.15s;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-success { background: var(--success); color: #052e16; }
+    .btn-success:hover:not(:disabled) { filter: brightness(1.08); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .progress-wrap {
+      width: 100%; height: 12px; background: #0f172a; border-radius: 999px;
+      overflow: hidden; border: 1px solid var(--border); margin-bottom: 6px;
+    }
+    .progress-bar {
+      width: 0%; height: 100%; background: var(--primary); transition: width 0.15s;
+    }
+    .progress-text {
+      font-size: 0.85rem; color: var(--muted); text-align: right; margin-bottom: 14px;
+    }
+    #console {
+      background: #020617; border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px; height: 240px; overflow-y: auto; font-family: ui-monospace, monospace;
+      font-size: 0.82rem; line-height: 1.45; white-space: pre-wrap; color: #cbd5e1;
+    }
+    .warn {
+      display: none; padding: 12px; border-radius: 8px; margin-bottom: 16px;
+      background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger);
+      color: #fecaca; font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ESP32 Web Flasher</h1>
+    <p class="subtitle">Nạp tệp <code>.bin</code> trực tiếp qua cổng USB bằng Web Serial API</p>
+
+    <div id="browserWarn" class="warn">
+      Trình duyệt hiện tại không hỗ trợ Web Serial API. Vui lòng dùng <strong>Google Chrome</strong> hoặc <strong>Microsoft Edge</strong> trên máy tính.
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="baudrate">Tốc độ Baud</label>
+        <select id="baudrate">
+          <option value="115200">115200 (Ổn định)</option>
+          <option value="460800" selected>460800 (Nhanh)</option>
+          <option value="921600">921600 (Rất nhanh)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="address">Địa chỉ Flash (Hex)</label>
+        <input type="text" id="address" value="0x10000" placeholder="0x10000" />
+        <div class="presets">
+          <button type="button" class="preset-btn" data-addr="0x10000">0x10000 (App .bin)</button>
+          <button type="button" class="preset-btn" data-addr="0x0">0x0 (Merged .bin)</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="binFile">Chọn tệp Firmware (.bin)</label>
+        <input type="file" id="binFile" accept=".bin" />
+      </div>
+    </div>
+
+    <label class="checkbox-row">
+      <input type="checkbox" id="eraseAll" />
+      Xóa toàn bộ bộ nhớ Flash trước khi nạp (Erase Flash)
+    </label>
+
+    <div class="actions">
+      <button id="connectBtn" class="btn btn-primary">1. Kết nối ESP32</button>
+      <button id="flashBtn" class="btn btn-success" disabled>2. Nạp Firmware</button>
+      <button id="disconnectBtn" class="btn btn-danger" disabled>Ngắt kết nối</button>
+    </div>
+
+    <div class="progress-wrap">
+      <div id="progressBar" class="progress-bar"></div>
+    </div>
+    <div id="progressText" class="progress-text">Chưa kết nối</div>
+
+    <div id="console"></div>
+  </div>
+
+  <script type="module">
+    import { ESPLoader, Transport } from "https://esm.sh/esptool-js@0.4.5";
+
+    const connectBtn = document.getElementById("connectBtn");
+    const flashBtn = document.getElementById("flashBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+    const baudrateSelect = document.getElementById("baudrate");
+    const addressInput = document.getElementById("address");
+    const binFileInput = document.getElementById("binFile");
+    const eraseAllCheckbox = document.getElementById("eraseAll");
+    const progressBar = document.getElementById("progressBar");
+    const progressText = document.getElementById("progressText");
+    const consoleEl = document.getElementById("console");
+    const browserWarn = document.getElementById("browserWarn");
+
+    if (!("serial" in navigator)) {
+      browserWarn.style.display = "block";
+      connectBtn.disabled = true;
+    }
+
+    let device = null;
+    let transport = null;
+    let esploader = null;
+
+    function log(msg) {
+      consoleEl.textContent += msg + "\n";
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    const espLoaderTerminal = {
+      clean() { consoleEl.textContent = ""; },
+      writeLine(data) { log(data); },
+      write(data) {
+        consoleEl.textContent += data;
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+    };
+
+    // Chuyển file .bin sang binary string an toàn cho file dung lượng lớn
+    function readFileAsBinaryString(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const bytes = new Uint8Array(reader.result);
+          let binary = "";
+          const chunkSize = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+          }
+          resolve(binary);
+        };
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    // Nút chọn nhanh địa chỉ
+    document.querySelectorAll(".preset-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        addressInput.value = btn.dataset.addr;
+      });
+    });
+
+    connectBtn.addEventListener("click", async () => {
+      try {
+        espLoaderTerminal.clean();
+        progressText.textContent = "Đang kết nối...";
+        device = await navigator.serial.requestPort({});
+        transport = new Transport(device, true);
+
+        const baudrate = parseInt(baudrateSelect.value, 10);
+        esploader = new ESPLoader({
+          transport,
+          baudrate,
+          terminal: espLoaderTerminal
+        });
+
+        const chip = await esploader.main();
+        log(`>>> Kết nối thành công: ${chip}`);
+        progressText.textContent = `Đã kết nối (${chip})`;
+        connectBtn.disabled = true;
+        flashBtn.disabled = false;
+        disconnectBtn.disabled = false;
+      } catch (err) {
+        log(`Lỗi kết nối: ${err.message}`);
+        progressText.textContent = "Kết nối thất bại";
+      }
+    });
+
+    flashBtn.addEventListener("click", async () => {
+      const file = binFileInput.files[0];
+      if (!file) {
+        alert("Vui lòng chọn tệp .bin trước khi nạp!");
+        return;
+      }
+
+      const address = parseInt(addressInput.value.trim(), 16);
+      if (Number.isNaN(address)) {
+        alert("Địa chỉ Flash không hợp lệ (ví dụ: 0x10000 hoặc 0x0).");
+        return;
+      }
+
+      try {
+        flashBtn.disabled = true;
+        disconnectBtn.disabled = true;
+        progressBar.style.width = "0%";
+        progressText.textContent = "Đang đọc tệp .bin...";
+
+        const binaryData = await readFileAsBinaryString(file);
+        log(`>>> Bắt đầu nạp ${file.name} (${file.size} bytes) tại địa chỉ 0x${address.toString(16)}...`);
+
+        await esploader.writeFlash({
+          fileArray: [{ data: binaryData, address }],
+          flashSize: "keep",
+          eraseAll: eraseAllCheckbox.checked,
+          compress: true,
+          reportProgress: (fileIndex, written, total) => {
+            const percent = Math.round((written / total) * 100);
+            progressBar.style.width = `${percent}%`;
+            progressText.textContent = `Đang nạp: ${percent}% (${written}/${total} bytes)`;
+          }
+        });
+
+        log(">>> Nạp thành công! Đang khởi động lại ESP32...");
+        await transport.setDTR(false);
+        await transport.setRTS(true);
+        await new Promise(r => setTimeout(r, 100));
+        await transport.setRTS(false);
+
+        progressBar.style.width = "100%";
+        progressText.textContent = "Hoàn tất nạp firmware!";
+      } catch (err) {
+        log(`Lỗi khi nạp: ${err.message}`);
+        progressText.textContent = "Nạp thất bại";
+      } finally {
+        flashBtn.disabled = false;
+        disconnectBtn.disabled = false;
+      }
+    });
+
+    disconnectBtn.addEventListener("click", async () => {
+      try {
+        if (transport) {
+          await transport.disconnect();
+        }
+      } catch (err) {
+        log(`Lỗi ngắt kết nối: ${err.message}`);
+      } finally {
+        transport = null;
+        esploader = null;
+        device = null;
+        connectBtn.disabled = false;
+        flashBtn.disabled = true;
+        disconnectBtn.disabled = true;
+        progressBar.style.width = "0%";
+        progressText.textContent = "Đã ngắt kết nối";
+        log(">>> Đã ngắt kết nối cổng Serial.");
+      }
+    });
+  </script>
+</body>
+</html>
